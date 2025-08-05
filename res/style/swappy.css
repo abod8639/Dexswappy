@@ -27,3 +27,6 @@
 .color-box .color-blue image {
   background-color: rgb(0, 0, 255);
 }
+.color-box .color-black image {
+  background-color: rgb(0, 0, 0);
+}
