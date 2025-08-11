@@ -4,6 +4,7 @@
 #  ninja -C build swappy-pot   
 #  ninja -C build swappy-update-po
 #  meson compile -C build
+#  meson build --reconfigure && ninja -C build 
 
 if [ -z "$1" ]; then
   echo "Error: Please provide a path to an image file."

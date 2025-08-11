@@ -115,7 +115,7 @@ struct swappy_state_ui {
 
   GtkWindow *window;
   GtkWidget *area;
-  WebKitWebView *web_view;
+  GtkWidget *web_view;
   GtkWidget *web_view_box;
 
   GtkToggleButton *panel_toggle_button;

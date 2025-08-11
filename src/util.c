@@ -60,8 +60,8 @@ glong string_get_nb_bytes_until(gchar *str, glong until) {
 void pixel_data_print(guint32 pixel) {
   const guint32 r = pixel >> 24 & 0xff;
   const guint32 g = pixel >> 16 & 0xff;
-  const guint32 b = pixel >> 8 & 0xff;
-  const guint32 a = pixel >> 0 & 0xff;
+  const guint32 b = pixel >> 8  & 0xff;
+  const guint32 a = pixel >> 0  & 0xff;
 
   g_debug("rgba(%u, %d, %u, %u)", r, g, b, a);
 }

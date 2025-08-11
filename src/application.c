@@ -5,7 +5,6 @@
 #include <gtk/gtk.h>
 #include <stdio.h>
 #include <time.h>
-#include <webkit2/webkit2.h>
 #include <curl/curl.h>
 
 #include "clipboard.h"
@@ -15,6 +14,7 @@
 #include "pixbuf.h"
 #include "render.h"
 #include "swappy.h"
+#include "webview.h"
 
 static void update_ui_undo_redo(struct swappy_state *state) {
   GtkWidget *undo = GTK_WIDGET(state->ui->undo);
@@ -681,6 +681,10 @@ void web_view_back_button_clicked_handler(GtkWidget *widget, struct swappy_state
 }
 
 void search_button_clicked_handler(GtkWidget *widget, struct swappy_state *state) {
+  GtkAllocation allocation;
+  gtk_widget_get_allocation(GTK_WIDGET(state->ui->painting_box), &allocation);
+  gtk_widget_set_size_request(state->ui->web_view_box, allocation.width, allocation.height);
+
   const gchar *tempdir = g_get_tmp_dir();
   gchar filename[] = "swappy-search.png";
   state->temp_image_file_path = g_build_filename(tempdir, filename, NULL);
@@ -701,10 +705,15 @@ void search_button_clicked_handler(GtkWidget *widget, struct swappy_state *state
   gtk_widget_hide(GTK_WIDGET(state->ui->painting_box));
   gtk_widget_show(state->ui->web_view_box);
 
-  webkit_web_view_load_uri(state->ui->web_view, "https://lens.google.com/upload");
-  webkit_web_view_set_zoom_level (state->ui->web_view,0.5 );
-
+  swappy_webview_load_uri(SWAPPY_WEBVIEW(state->ui->web_view), "https://lens.google.com/upload");
+  swappy_webview_set_zoom_level(SWAPPY_WEBVIEW(state->ui->web_view), 0.5);
 }
+
+
+
+
+
+
 
 static void compute_window_size_and_scaling_factor(struct swappy_state *state) {
   GdkRectangle workarea = {0};
@@ -820,11 +829,11 @@ static bool load_layout(struct swappy_state *state) {
   state->ui->window = window;
 
   // Create web view
-  state->ui->web_view = WEBKIT_WEB_VIEW(webkit_web_view_new());
+  state->ui->web_view = swappy_webview_new(state);
   g_signal_connect(state->ui->web_view, "run-file-chooser-request", G_CALLBACK(on_web_view_run_file_chooser_request), state);
   state->ui->web_view_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
   GtkWidget *scrolled_view = gtk_scrolled_window_new(NULL, NULL);
-  gtk_container_add(GTK_CONTAINER(scrolled_view), GTK_WIDGET(state->ui->web_view));
+  gtk_container_add(GTK_CONTAINER(scrolled_view), state->ui->web_view);
   GtkWidget *back_button = gtk_button_new_with_label("Back to editor");
   g_signal_connect(back_button, "clicked", G_CALLBACK(web_view_back_button_clicked_handler), state);
   gtk_box_pack_start(GTK_BOX(state->ui->web_view_box), back_button, FALSE, FALSE, 0);

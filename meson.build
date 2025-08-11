@@ -63,6 +63,7 @@ executable(
 		'src/pixbuf.c',
 		'src/render.c',
 		'src/util.c',
+		'src/webview.c',
 	]),
 	dependencies: [
 		cairo,
