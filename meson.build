@@ -40,8 +40,10 @@ endif
 cairo = dependency('cairo')
 pango = dependency('pango')
 math = cc.find_library('m')
-gtk = dependency('gtk+-3.0', version: '>=3.20.0')
+gtk = dependency('gtk+-3.0', version: '>=3.24.0')
 gio = dependency('gio-2.0')
+webkit = dependency('webkit2gtk-4.1')
+curl = dependency('libcurl')
 
 subdir('res')
 subdir('src/po')
@@ -68,6 +70,8 @@ executable(
 		gio,
 		gtk,
 		math,
+		webkit,
+		curl,
 	],
 	link_args: '-rdynamic',
 	include_directories: [swappy_inc],

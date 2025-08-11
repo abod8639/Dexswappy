@@ -2,6 +2,8 @@
 
 #include <glib-2.0/glib.h>
 #include <gtk/gtk.h>
+#include <webkit2/webkit2.h>
+
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -113,6 +115,8 @@ struct swappy_state_ui {
 
   GtkWindow *window;
   GtkWidget *area;
+  WebKitWebView *web_view;
+  GtkWidget *web_view_box;
 
   GtkToggleButton *panel_toggle_button;
 
@@ -174,7 +178,7 @@ struct swappy_state {
   char *file_str;
   char *output_file;
 
-  char *temp_file_str;
+  char *temp_image_file_path;
 
   struct swappy_box *window;
   struct swappy_box *geometry;

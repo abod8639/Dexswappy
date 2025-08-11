@@ -66,7 +66,7 @@ void pixbuf_save_to_stdout(GdkPixbuf *pixbuf) {
 GdkPixbuf *pixbuf_init_from_file(struct swappy_state *state) {
   GError *error = NULL;
   char *file =
-      state->temp_file_str != NULL ? state->temp_file_str : state->file_str;
+      state->temp_image_file_path != NULL ? state->temp_image_file_path : state->file_str;
   GdkPixbuf *image = gdk_pixbuf_new_from_file(file, &error);
 
   if (error != NULL) {

@@ -1,9 +1,12 @@
 #include <gdk/gdk.h>
 #include <glib-2.0/glib.h>
+#include <glib/glist.h>
 #include <glib/gstdio.h>
 #include <gtk/gtk.h>
 #include <stdio.h>
 #include <time.h>
+#include <webkit2/webkit2.h>
+#include <curl/curl.h>
 
 #include "clipboard.h"
 #include "config.h"
@@ -58,12 +61,12 @@ void application_finish(struct swappy_state *state) {
   pixbuf_free(state);
   cairo_surface_destroy(state->rendering_surface);
   cairo_surface_destroy(state->original_image_surface);
-  if (state->temp_file_str) {
-    g_info("deleting temporary file: %s", state->temp_file_str);
-    if (g_unlink(state->temp_file_str) != 0) {
-      g_warning("unable to delete temporary file: %s", state->temp_file_str);
+  if (state->temp_image_file_path) {
+    g_info("deleting temporary file: %s", state->temp_image_file_path);
+    if (g_unlink(state->temp_image_file_path) != 0) {
+      g_warning("unable to delete temporary file: %s", state->temp_image_file_path);
     }
-    g_free(state->temp_file_str);
+    g_free(state->temp_image_file_path);
   }
   g_free(state->file_str);
   g_free(state->geometry);
@@ -647,6 +650,62 @@ void fill_shape_toggled_handler(GtkWidget *widget, struct swappy_state *state) {
   action_fill_shape_toggle(state, &toggled);
 }
 
+static gboolean on_web_view_run_file_chooser_request(WebKitWebView *web_view, WebKitFileChooserRequest *request, struct swappy_state *state) {
+    if (state->temp_image_file_path != NULL) {
+        GSList *files_list = NULL;
+        files_list = g_slist_append(files_list, g_strdup(state->temp_image_file_path)); // Duplicate the string
+
+        // Manually convert GSList to gchar**
+        gchar **files_array = g_new0(gchar *, g_slist_length(files_list) + 1);
+        int i = 0;
+        for (GSList *l = files_list; l != NULL; l = l->next) {
+            files_array[i++] = (gchar *)l->data;
+        }
+        files_array[i] = NULL; // Null-terminate the array
+
+        webkit_file_chooser_request_select_files(request, (const gchar * const *)files_array);
+
+        g_strfreev(files_array); // Free the array and its contents
+        g_slist_free_full(files_list, g_free); // Free the duplicated string in the list
+
+        g_free(state->temp_image_file_path); // Free the path after use
+        state->temp_image_file_path = NULL; // Clear it
+        return TRUE; // Handled
+    }
+    return FALSE; // Not handled, let default behavior occur (show dialog)
+}
+
+void web_view_back_button_clicked_handler(GtkWidget *widget, struct swappy_state *state) {
+  gtk_widget_hide(state->ui->web_view_box);
+  gtk_widget_show(GTK_WIDGET(state->ui->painting_box));
+}
+
+void search_button_clicked_handler(GtkWidget *widget, struct swappy_state *state) {
+  const gchar *tempdir = g_get_tmp_dir();
+  gchar filename[] = "swappy-search.png";
+  state->temp_image_file_path = g_build_filename(tempdir, filename, NULL);
+
+  GdkPixbuf *pixbuf = pixbuf_get_from_state(state);
+  GError *error = NULL;
+  gdk_pixbuf_savev(pixbuf, state->temp_image_file_path, "png", NULL, NULL, &error);
+  g_object_unref(pixbuf);
+
+  if (error) {
+    g_warning("unable to save pixbuf to temporary file: %s", error->message);
+    g_error_free(error);
+    g_free(state->temp_image_file_path);
+    state->temp_image_file_path = NULL;
+    return;
+  }
+
+  gtk_widget_hide(GTK_WIDGET(state->ui->painting_box));
+  gtk_widget_show(state->ui->web_view_box);
+
+  webkit_web_view_load_uri(state->ui->web_view, "https://lens.google.com/upload");
+  webkit_web_view_set_zoom_level (state->ui->web_view,0.5 );
+
+}
+
 static void compute_window_size_and_scaling_factor(struct swappy_state *state) {
   GdkRectangle workarea = {0};
   GdkDisplay *display = gdk_display_get_default();
@@ -721,17 +780,11 @@ static bool load_css(struct swappy_state *state) {
 
 static bool load_layout(struct swappy_state *state) {
   GError *error = NULL;
-  // init color
   GdkRGBA color;
-
-  /* Construct a GtkBuilder instance and load our UI description */
   GtkBuilder *builder = gtk_builder_new();
-
-  // Set translation domain for the application based on `src/po/meson.build`
   gtk_builder_set_translation_domain(builder, GETTEXT_PACKAGE);
 
-  if (gtk_builder_add_from_resource(builder, "/me/jtheoof/swappy/swappy.glade",
-                                    &error) == 0) {
+  if (gtk_builder_add_from_resource(builder, "/me/jtheoof/swappy/swappy.glade", &error) == 0) {
     g_printerr("Error loading file: %s", error->message);
     g_clear_error(&error);
     return false;
@@ -739,73 +792,58 @@ static bool load_layout(struct swappy_state *state) {
 
   gtk_builder_connect_signals(builder, state);
 
-  GtkWindow *window =
-      GTK_WINDOW(gtk_builder_get_object(builder, "paint-window"));
-
+  GtkWindow *window = GTK_WINDOW(gtk_builder_get_object(builder, "paint-window"));
   g_signal_connect(window, "destroy", G_CALLBACK(on_destroy), state);
 
-  state->ui->panel_toggle_button =
-      GTK_TOGGLE_BUTTON(gtk_builder_get_object(builder, "btn-toggle-panel"));
-
+  state->ui->panel_toggle_button = GTK_TOGGLE_BUTTON(gtk_builder_get_object(builder, "btn-toggle-panel"));
   state->ui->undo = GTK_BUTTON(gtk_builder_get_object(builder, "undo-button"));
   state->ui->redo = GTK_BUTTON(gtk_builder_get_object(builder, "redo-button"));
-
-  GtkWidget *area =
-      GTK_WIDGET(gtk_builder_get_object(builder, "painting-area"));
-
-  state->ui->painting_box =
-      GTK_BOX(gtk_builder_get_object(builder, "painting-box"));
-  GtkRadioButton *brush =
-      GTK_RADIO_BUTTON(gtk_builder_get_object(builder, "brush"));
-  GtkRadioButton *text =
-      GTK_RADIO_BUTTON(gtk_builder_get_object(builder, "text"));
-  GtkRadioButton *rectangle =
-      GTK_RADIO_BUTTON(gtk_builder_get_object(builder, "rectangle"));
-  GtkRadioButton *ellipse =
-      GTK_RADIO_BUTTON(gtk_builder_get_object(builder, "ellipse"));
-  GtkRadioButton *arrow =
-      GTK_RADIO_BUTTON(gtk_builder_get_object(builder, "arrow"));
-  GtkRadioButton *blur =
-      GTK_RADIO_BUTTON(gtk_builder_get_object(builder, "blur"));
-
-  state->ui->red =
-      GTK_RADIO_BUTTON(gtk_builder_get_object(builder, "color-red-button"));
-  state->ui->green =
-      GTK_RADIO_BUTTON(gtk_builder_get_object(builder, "color-green-button"));
-  state->ui->blue =
-      GTK_RADIO_BUTTON(gtk_builder_get_object(builder, "color-blue-button"));
-  state->ui->custom =
-      GTK_RADIO_BUTTON(gtk_builder_get_object(builder, "color-custom-button"));
-  state->ui->color =
-      GTK_COLOR_BUTTON(gtk_builder_get_object(builder, "custom-color-button"));
-
-  state->ui->line_size =
-      GTK_BUTTON(gtk_builder_get_object(builder, "stroke-size-button"));
-  state->ui->text_size =
-      GTK_BUTTON(gtk_builder_get_object(builder, "text-size-button"));
-
-  state->ui->fill_shape = GTK_TOGGLE_BUTTON(
-      gtk_builder_get_object(builder, "fill-shape-toggle-button"));
-
+  GtkWidget *area = GTK_WIDGET(gtk_builder_get_object(builder, "painting-area"));
+  state->ui->painting_box = GTK_BOX(gtk_builder_get_object(builder, "painting-box"));
+  state->ui->brush = GTK_RADIO_BUTTON(gtk_builder_get_object(builder, "brush"));
+  state->ui->text = GTK_RADIO_BUTTON(gtk_builder_get_object(builder, "text"));
+  state->ui->rectangle = GTK_RADIO_BUTTON(gtk_builder_get_object(builder, "rectangle"));
+  state->ui->ellipse = GTK_RADIO_BUTTON(gtk_builder_get_object(builder, "ellipse"));
+  state->ui->arrow = GTK_RADIO_BUTTON(gtk_builder_get_object(builder, "arrow"));
+  state->ui->blur = GTK_RADIO_BUTTON(gtk_builder_get_object(builder, "blur"));
+  state->ui->red = GTK_RADIO_BUTTON(gtk_builder_get_object(builder, "color-red-button"));
+  state->ui->green = GTK_RADIO_BUTTON(gtk_builder_get_object(builder, "color-green-button"));
+  state->ui->blue = GTK_RADIO_BUTTON(gtk_builder_get_object(builder, "color-blue-button"));
+  state->ui->custom = GTK_RADIO_BUTTON(gtk_builder_get_object(builder, "color-custom-button"));
+  state->ui->color = GTK_COLOR_BUTTON(gtk_builder_get_object(builder, "custom-color-button"));
+  state->ui->line_size = GTK_BUTTON(gtk_builder_get_object(builder, "stroke-size-button"));
+  state->ui->text_size = GTK_BUTTON(gtk_builder_get_object(builder, "text-size-button"));
+  state->ui->fill_shape = GTK_TOGGLE_BUTTON(gtk_builder_get_object(builder, "fill-shape-toggle-button"));
   gdk_rgba_parse(&color, state->config->custom_color);
   gtk_color_chooser_set_rgba(GTK_COLOR_CHOOSER(state->ui->color), &color);
-
-  state->ui->brush = brush;
-  state->ui->text = text;
-  state->ui->rectangle = rectangle;
-  state->ui->ellipse = ellipse;
-  state->ui->arrow = arrow;
-  state->ui->blur = blur;
   state->ui->area = area;
   state->ui->window = window;
 
+  // Create web view
+  state->ui->web_view = WEBKIT_WEB_VIEW(webkit_web_view_new());
+  g_signal_connect(state->ui->web_view, "run-file-chooser-request", G_CALLBACK(on_web_view_run_file_chooser_request), state);
+  state->ui->web_view_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
+  GtkWidget *scrolled_view = gtk_scrolled_window_new(NULL, NULL);
+  gtk_container_add(GTK_CONTAINER(scrolled_view), GTK_WIDGET(state->ui->web_view));
+  GtkWidget *back_button = gtk_button_new_with_label("Back to editor");
+  g_signal_connect(back_button, "clicked", G_CALLBACK(web_view_back_button_clicked_handler), state);
+  gtk_box_pack_start(GTK_BOX(state->ui->web_view_box), back_button, FALSE, FALSE, 0);
+  gtk_box_pack_start(GTK_BOX(state->ui->web_view_box), scrolled_view, TRUE, TRUE, 0);
+
+  GtkPaned *paned = GTK_PANED(gtk_builder_get_object(builder, "main-paned"));
+  GtkWidget *left_pane_container = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+  g_object_ref(state->ui->painting_box);
+  gtk_container_remove(GTK_CONTAINER(paned), GTK_WIDGET(state->ui->painting_box));
+  gtk_box_pack_start(GTK_BOX(left_pane_container), GTK_WIDGET(state->ui->painting_box), TRUE, TRUE, 0);
+  gtk_box_pack_start(GTK_BOX(left_pane_container), state->ui->web_view_box, TRUE, TRUE, 0);
+  gtk_paned_add1(paned, left_pane_container);
+  gtk_widget_show_all(left_pane_container);
+  gtk_widget_hide(state->ui->web_view_box);
+
   compute_window_size_and_scaling_factor(state);
-  gtk_widget_set_size_request(area, state->window->width,
-                              state->window->height);
+  gtk_widget_set_size_request(area, state->window->width, state->window->height);
   action_toggle_painting_panel(state, &state->config->show_panel);
-
   g_object_unref(G_OBJECT(builder));
-
   return true;
 }
 
@@ -892,8 +930,8 @@ static gint command_line_handler(GtkApplication *app,
 
   if (has_option_file(state)) {
     if (is_file_from_stdin(state->file_str)) {
-      char *temp_file_str = file_dump_stdin_into_a_temp_file();
-      state->temp_file_str = temp_file_str;
+      char *temp_image_file_path = file_dump_stdin_into_a_temp_file();
+      state->temp_image_file_path = temp_image_file_path;
     }
 
     if (!pixbuf_init_from_file(state)) {

@@ -66,7 +66,7 @@ The following lines can be used as swappy's default:
 	paint_mode=brush
 	early_exit=false
 	fill_shape=false
-	auto_save=false
+	auto_save=falseobsidian .
 	custom_color=rgba(192,125,17,1)
 ```
 
@@ -102,6 +102,8 @@ formats are: standard name (one of: https://github.com/rgb-x/system/blob/master/
 - *R*: Use Red Color
 - *G*: Use Green Color
 - *B*: Use Blue Color
+- *BB*: Use Black Color
+
 - *C*: Use Custom Color
 - *Minus*: Reduce Stroke Size
 - *Plus*: Increase Stroke Size

@@ -34,6 +34,7 @@ void rectangle_clicked_handler(GtkWidget *widget, struct swappy_state *state);
 void ellipse_clicked_handler(GtkWidget *widget, struct swappy_state *state);
 void arrow_clicked_handler(GtkWidget *widget, struct swappy_state *state);
 void blur_clicked_handler(GtkWidget *widget, struct swappy_state *state);
+void search_button_clicked_handler(GtkWidget *widget, struct swappy_state *state);
 
 void copy_clicked_handler(GtkWidget *widget, struct swappy_state *state);
 void save_clicked_handler(GtkWidget *widget, struct swappy_state *state);
@@ -57,3 +58,4 @@ void stroke_size_increase_handler(GtkWidget *widget,
 void text_size_decrease_handler(GtkWidget *widget, struct swappy_state *state);
 void text_size_reset_handler(GtkWidget *widget, struct swappy_state *state);
 void text_size_increase_handler(GtkWidget *widget, struct swappy_state *state);
+void web_view_back_button_clicked_handler(GtkWidget *widget, struct swappy_state *state);
